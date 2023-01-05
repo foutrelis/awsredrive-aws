@@ -1,0 +1,88 @@
+#!/bin/bash
+
+set -eo pipefail
+
+readonly ZIP_URL=https://github.com/nickntg/awsredrive.core/releases/download/${version}/awsredrive.core.linux-console.zip
+
+apt update
+apt install unzip
+
+cd /root
+wget "$ZIP_URL"
+unzip awsredrive.core.linux-console.zip -d /opt/awsredrive
+rm awsredrive.core.linux-console.zip
+chmod +x /opt/awsredrive/AWSRedrive.console
+
+cat >/opt/awsredrive/config.json <<EOF
+[
+  {
+    "Alias": "#1",
+    "QueueUrl": "${queue_url}",
+    "RedriveUrl": "https://example.com/",
+    "Region": "${region}",
+    "Active": true,
+    "Timeout": 10000
+  }
+]
+EOF
+
+useradd -d /opt/awsredrive -m -s /usr/sbin/nologin awsredrive
+chown -R awsredrive: /opt/awsredrive
+
+cat >/etc/systemd/system/awsredrive.service <<EOF
+[Unit]
+Description=AWSRedrive service
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=awsredrive
+WorkingDirectory=/opt/awsredrive
+ExecStart=bash -c '/opt/awsredrive/AWSRedrive.console <&-'
+SendSIGHUP=yes
+Restart=always
+
+NoNewPrivileges=true
+LockPersonality=true
+CapabilityBoundingSet=
+
+PrivateDevices=true
+PrivateTmp=true
+PrivateUsers=true
+ProtectSystem=strict
+ProtectHome=true
+
+RemoveIPC=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+
+RestrictAddressFamilies=AF_INET
+RestrictAddressFamilies=AF_INET6
+
+ProtectHostname=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectClock=true
+ProtectProc=invisible
+
+SystemCallArchitectures=native
+SystemCallFilter=~@clock
+SystemCallFilter=~@cpu-emulation
+SystemCallFilter=~@debug
+SystemCallFilter=~@module
+SystemCallFilter=~@mount
+SystemCallFilter=~@obsolete
+SystemCallFilter=~@privileged
+SystemCallFilter=~@raw-io
+SystemCallFilter=~@reboot
+SystemCallFilter=~@swap
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl enable --now awsredrive
